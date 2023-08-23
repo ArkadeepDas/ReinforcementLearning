@@ -1,7 +1,4 @@
 import torch
-import torch.nn.functional as F
-import numpy as np
-
 
 # Input image size = (3,185,95)
 # We are creating 3 CNN Layers -> 2 FC Layers
