@@ -55,9 +55,17 @@ class Agent(object):
         if rand < 1 - self.EPSILON:
             # Took the max value of action
             # It will take the heightes value from the action
+            # Exploitation
             action = torch.argmax(actions, dim=1)
         else:
-            # Choose randomk action from action space
+            # Choose random action from action space
+            # Exploration
             action = np.random.choice(self.actionSpace)
         self.steps = self.steps + 1
         return action
+
+    # Now let's see how the agent is going to learn
+    # def learn(self, batch_size):
+    #     self.Q_eval.optimizer.zero_grad()
+    #     # We are going to replace target network
+    #     if self.replace is not None and self.learn_step_counter % self.replace == 0:
