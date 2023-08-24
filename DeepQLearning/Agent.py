@@ -54,8 +54,8 @@ class Agent(object):
         actions = self.Q_eval(observation)
         if rand < 1 - self.EPSILON:
             # Took the max value of action
-            # It will take the heightes value from second row
-            action = torch.argmax(actions[1]).item()  ########
+            # It will take the heightes value from the action
+            action = torch.argmax(actions, dim=1)
         else:
             # Choose randomk action from action space
             action = np.random.choice(self.actionSpace)
