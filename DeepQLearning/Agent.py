@@ -59,7 +59,7 @@ class Agent():
             # Pass the state to our train network
             actions = self.Q_eval(state)
             # Take maximum value from actions
-            action = self.argmax(actions).item()
+            action = torch.argmax(actions).item()
         # Exploration
         else:
             action = np.random.choice(self.action_space)
