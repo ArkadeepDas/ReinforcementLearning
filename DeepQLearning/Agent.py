@@ -4,68 +4,67 @@ from CNNModel import DeepQNetwork
 
 
 # Let's create a class for Agent
-class Agent(object):
+class Agent():
 
     def __init__(self,
                  gamma,
                  epsilon,
                  learning_rate,
-                 MaxMemorySize,
-                 lowepsilon=0.05,
-                 replace=10000,
-                 actionSpace=[0, 1, 2, 3, 4, 5]):
-        # GAMMA = discount factor
-        self.GAMMA = gamma
-        # Epsilon greedy action selection
-        self.EPSILON = epsilon
-        self.MEM_SIZE = MaxMemorySize
-        # A variable to keep track how low a Epsilon can go
-        self.LOW_EPSILON = lowepsilon
-        # How often we are going to replace our target network
-        self.replace = replace
-        # All possible actions for our agent
-        self.ACTION_SPACE = actionSpace
-        self.steps = 0
-        self.learn_step_counter = 0
-        # We use list not numpy arrary because,
-        # associated cost of stacking numpy array is high
-        self.memory = []
-        # Keep track of total number of memory stored
-        self.memory_count = 0
-        # Load model for exploration and exploitation
-        # Agent estimates current set of states
+                 batch_size,
+                 num_actions,
+                 max_memory_size=100000,
+                 epsilon_end=0.01,
+                 epsilon_decay=5e-4):
+        # Gamma is weighting feature rewards
+        self.gamma = gamma
+        # Exploration or exploitation threshold
+        self.epsilon = epsilon
+        self.epsilon_end = epsilon_end
+        # After one episode how much epsilon will decay
+        self.epsilon_decay = epsilon_decay
+        self.learning_rate = learning_rate
+        self.action_space = num_actions
+        self.memory_size = max_memory_size
+        self.batch_size = batch_size
+        # Keep track of the first available memory
+        self.memory_counter = 0
         self.Q_eval = DeepQNetwork()
-        # Agent estimates next set of states
-        self.Q_next = DeepQNetwork()
+        # Total memory for a state (total_number_of_images, channels, image_width, image_height)
+        self.state_memory = np.zeros((self.memory_size, 1, 185, 95))
+        # We also need to have new state memory to keep track of the new states the agent encounters
+        self.new_state_memory = np.zeros((self.memory_size, 1, 185, 95))
+        # We need action memory, reward memory, terminal_memory
+        self.action_memory = np.zeros(self.memory_size, dtype=np.int32)
+        self.reward_memory = np.zeros(self.memory_size, dtype=np.float32)
+        self.terminal_memory = np.zeros(self.memory_size, dtype=np.bool)
 
-    def storeTransition(self, current_state, action, reward, next_state):
-        if self.memory_count < self.MEM_SIZE:
-            self.memory.append([current_state, action, reward, next_state])
-        # If size is full then overwrite from the starting point
-        else:
-            self.memory[self.memory_count % self.MEM_SIZE] = [
-                current_state, action, reward, next_state
-            ]
-        # Increase the memory count
-        self.memory_count = self.memory_count + 1
+    # Store the transitions in to the memory
+    def store_transitions(self, state, action, reward, next_state, done):
+        # First find the unoccupied memory
+        index = self.memory_counter % self.memory_size
+        # If memory is full then we store from the begining again
+        self.state_memory[index] = state
+        self.new_state_memory[index] = next_state
+        self.reward_memory[index] = reward
+        self.action_memory[index] = action
+        self.terminal_memory[index] = done
 
-    def chooseAction(self, observation):
-        rand = np.random.random()
-        actions = self.Q_eval(observation)
-        if rand < 1 - self.EPSILON:
-            # Took the max value of action
-            # It will take the heightes value from the action
-            # Exploitation
-            action = torch.argmax(actions, dim=1)
+        self.memory_counter += 1
+
+    # Choose the action by passing state to the network
+    def choose_action(self, observation):
+        # Exploitation
+        if np.random.random() > self.epsilon:
+            state = torch.tensor([observation])
+            # Pass the state to our train network
+            actions = self.Q_eval(state)
+            # Take maximum value from actions
+            action = self.argmax(actions).item()
+        # Exploration
         else:
-            # Choose random action from action space
-            # Exploration
-            action = np.random.choice(self.actionSpace)
-        self.steps = self.steps + 1
+            action = np.random.choice(self.action_space)
+
         return action
 
-    # Now let's see how the agent is going to learn
-    # def learn(self, batch_size):
-    #     self.Q_eval.optimizer.zero_grad()
-    #     # We are going to replace target network
-    #     if self.replace is not None and self.learn_step_counter % self.replace == 0:
+    # # Now let's see how we can learn the model
+    # def learn(self):
