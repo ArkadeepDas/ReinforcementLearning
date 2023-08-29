@@ -29,8 +29,8 @@ class Network(torch.nn.Module):
 
     def __init__(self, env):
         super().__init__()
-        # env.observation_space = number of states
-        # env.action_space = number of action agent can take
+        # env.observation_space = number of states (here the value is 4)
+        # env.action_space = number of action agent can take (here the value is 2)
         self.in_features = int(env.observation_space.shape[0])
         self.net = torch.nn.Sequential(
             torch.nn.Linear(in_features=self.in_features, out_features=65),
@@ -60,3 +60,14 @@ target_network.load_state_dict(training_network.state_dict())
 
 # Reset the environment
 observation, _ = env.reset()
+# Storing experience in our replay memory/buffer with random actions
+for _ in range(MIN_REPLAY_SIZE):
+    # Randomly select an action from the action space
+    action = env.action_space.sample()
+    new_observation, reward, done, truncated, info = env.step(action=action)
+    transition = (observation, action, reward, done, new_observation)
+    replay_buffer.append(transition)
+    observation = new_observation
+
+    if done:
+        observation = env.reset()
