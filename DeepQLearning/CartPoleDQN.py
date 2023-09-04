@@ -22,6 +22,8 @@ EPSILON_END = 0.2
 EPSILON_DECAY = 10000
 # After that steps Target model update with Training model
 TARGET_UPDATE_FREQUENCY = 1000
+# Learning Rate for training model
+LEARNING_RATE = 0.0005
 
 
 # Let's create the model
@@ -55,7 +57,7 @@ class Network(torch.nn.Module):
 
 
 # Let's create the environment
-env = gymnasium.make('CartPole-v1')
+env = gymnasium.make('CartPole-v1', render_mode='human')
 
 # Total memory
 replay_buffer = deque(maxlen=BUFFER_SIZE)
@@ -67,6 +69,7 @@ episode_reward = 0.0
 # Let's initialize the networks
 training_network = Network(env=env)
 target_network = Network(env=env)
+optimizer = torch.optim.Adam(training_network.parameters(), lr=LEARNING_RATE)
 
 # Set target network parameters to training network
 target_network.load_state_dict(training_network.state_dict())
@@ -74,20 +77,20 @@ target_network.load_state_dict(training_network.state_dict())
 # Reset the environment
 observation, _ = env.reset()
 
-# Storing experience in our replay memory/buffer with random actions
-for _ in range(MIN_REPLAY_SIZE):
-    # Randomly select an action from the action space
-    action = env.action_space.sample()
-    new_observation, reward, done, truncated, info = env.step(action=action)
-    transition = (observation, action, reward, done, new_observation)
-    replay_buffer.append(transition)
-    observation = new_observation
+# for _ in range(MIN_REPLAY_SIZE):
+#     # Randomly select an action from the action space
+#     action = env.action_space.sample()
+#     new_observation, reward, done, truncated, info = env.step(action=action)
+#     transition = (observation, action, reward, done, new_observation)
+#     replay_buffer.append(transition)
+#     observation = new_observation
 
-    if done:
-        observation = env.reset()
+#     if done:
+#         observation, _ = env.reset()
 
 # Let's understand the main training loop
-observation = env.reset()
+observation, _ = env.reset()
+rewards = 0
 for step in itertools.count():
     # Here we are going to take epsilon greedy approch
     # It start from EPSILON_START and end in EPSILON_END
@@ -101,21 +104,88 @@ for step in itertools.count():
     # Exploitation
     else:
         # We select then action from our network
-        action = training_network.act(observation)
+        obs = torch.tensor(observation)
+        actions = training_network(obs)
+        action = training_network.act(actions)
 
+    # Storing experience in our replay memory/buffer with random actions
     new_observation, reward, done, truncated, info = env.step(action=action)
     transition = (observation, action, reward, done, new_observation)
+
     # Add transition to the memory
     replay_buffer.append(transition)
     # Update observation or state
     observation = new_observation
     episode_reward += reward
     if done:
-        observation = env.reset()
+        observation, _ = env.reset()
         # Add episode reward
         reward_buffer.append(episode_reward)
         # Reset episode buffer
         episode_reward = 0.0
 
-    # Start gradient step
-    # Sample batch size number of random transition from replay memory/buffer
+    # We do this to store some primary values to our replay memory/buffer
+    if step > MIN_REPLAY_SIZE:
+
+        # Start gradient step
+        # Sample batch size number of random transition from replay memory/buffer(total memory)
+        transitions = random.sample(replay_buffer, BATCH_SIZE)
+        # We need every values
+        observations_tensor = torch.as_tensor(np.asarray(
+            [t[0] for t in transitions]),
+                                              dtype=torch.float32)
+        actions_tensor = torch.as_tensor(
+            np.asarray([t[1] for t in transitions]),
+            dtype=torch.int64).unsqueeze(-1)  # Add dimention at the end
+        rewards_tensor = torch.as_tensor(
+            np.asarray([t[2] for t in transitions]),
+            dtype=torch.float32).unsqueeze(-1)  # Add dimention at the end
+        dones_tensor = torch.as_tensor(np.asarray([t[3] for t in transitions]),
+                                       dtype=torch.float32).unsqueeze(
+                                           -1)  # Add dimention at the end
+
+        new_observations_tensor = torch.as_tensor(np.asarray(
+            [t[4] for t in transitions]),
+                                                  dtype=torch.float32)
+
+        # Computing targets for the loss function
+        target_q_values = target_network(new_observations_tensor)
+        # Shape = batch x q_values
+        # Get maximum value from dimention 1
+        max_target_q_values = target_q_values.max(dim=1, keepdim=True)[0]
+        # Let's compute targets
+        targets = rewards_tensor + GAMMA * (1 -
+                                            dones_tensor) * max_target_q_values
+
+        # Here targets = future score we predict from the current state
+        # So we want to pass the current observation to predict the future
+        q_values_training_network = training_network(observations_tensor)
+
+        # Compute loss
+        # Choose the output from action tensor index, so that the model can produce max value in that index
+        action_q_values = torch.gather(input=q_values_training_network,
+                                       dim=1,
+                                       index=actions_tensor)
+        # Calculate the loss
+        loss = torch.nn.functional.smooth_l1_loss(action_q_values, targets)
+        optimizer.zero_grad()
+        # Backpropagation calculation
+        loss.backward()
+        optimizer.step()
+
+        # Update the target network with training network weights
+        if step % TARGET_UPDATE_FREQUENCY == 0:
+            target_network.load_state_dict(training_network.state_dict())
+
+        # Print rewards
+        if step % 1000 == 0:
+            avg_reward = np.mean(reward_buffer)
+            print(f'Current step: {step}')
+            print(f'Current average reward: {avg_reward}')
+            # Save the model with heighest rewards
+            if avg_reward > rewards:
+                print('---Update weight---')
+                torch.save(training_network.state_dict(), 'CartPoleDQN.pt')
+                rewards = avg_reward
+
+env.close()
