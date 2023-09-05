@@ -149,6 +149,8 @@ for step in itertools.count():
                                                   dtype=torch.float32)
 
         # Computing targets for the loss function
+        # When you pass the new observation (next state) to the target network during training,
+        # you are estimating the target Q-values for that new state.
         target_q_values = target_network(new_observations_tensor)
         # Shape = batch x q_values
         # Get maximum value from dimention 1
